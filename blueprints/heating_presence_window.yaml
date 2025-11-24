@@ -1,0 +1,186 @@
+blueprint:
+  name: Raumheizung mit Anwesenheit & mehreren Fenstern
+  description: >
+    Steuert die Zieltemperatur eines Raums anhand Anwesenheit und Fensterkontakten:
+    - Fenster offen → Temperatur auf Frostschutz
+    - Fenster zu → Komfort- oder Absenktemperatur je nach Anwesenheit
+    - Anwesenheitswechsel → Temperatur anpassen (nur wenn alle Fenster zu)
+  domain: automation
+  source_url: https://example.com/raumheizung_anwesenheit_fenster_blueprint
+  input:
+    climate_entity:
+      name: Klima-/Heizungs-Entität des Raums
+      description: Das Climate-Device des Raums (z.B. Bosch SHC Raumklima)
+      selector:
+        entity:
+          domain: climate
+
+    window_sensors:
+      name: Fenster-/Türkontakte des Raums
+      description: Wähle alle Fenster-/Türkontakte, die diesen Raum betreffen
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+
+    presence_entity:
+      name: Anwesenheits-Schalter (input_boolean)
+      description: Virtueller Schalter, der Anwesenheit im Raum repräsentiert
+      selector:
+        entity:
+          domain: input_boolean
+
+    comfort_temperature:
+      name: Komfort-Temperatur bei Anwesenheit
+      default: 21
+      selector:
+        number:
+          min: 5
+          max: 30
+          step: 0.5
+          unit_of_measurement: "°C"
+          mode: slider
+
+    away_temperature:
+      name: Absenk-Temperatur bei Abwesenheit
+      default: 17
+      selector:
+        number:
+          min: 5
+          max: 30
+          step: 0.5
+          unit_of_measurement: "°C"
+          mode: slider
+
+    frost_temperature:
+      name: Temperatur bei geöffnetem Fenster (Frostschutz)
+      default: 5
+      selector:
+        number:
+          min: 5
+          max: 15
+          step: 0.5
+          unit_of_measurement: "°C"
+          mode: slider
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  # Fenster-Änderungen
+  - platform: state
+    entity_id: !input window_sensors
+    to:
+      - "on"
+      - "off"
+
+  # Anwesenheit ändert sich
+  - platform: state
+    entity_id: !input presence_entity
+    to:
+      - "on"
+      - "off"
+
+action:
+  - variables:
+      climate_entity: !input climate_entity
+      window_sensors: !input window_sensors
+      presence_entity: !input presence_entity
+      comfort_temp: !input comfort_temperature
+      away_temp: !input away_temperature
+      frost_temp: !input frost_temperature
+
+      # Mindestens ein Fenster offen?
+      fenster_offen: >
+        {{ expand(window_sensors)
+           | selectattr('state', 'eq', 'on')
+           | list
+           | count > 0 }}
+
+      # Anwesenheit im Raum?
+      anwesend: >
+        {{ is_state(presence_entity, 'on') }}
+
+  - choose:
+
+      ###################################################################
+      # 1) Ein Fenster wurde geöffnet → Temperatur auf Frostschutz
+      ###################################################################
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ trigger.entity_id in window_sensors
+                 and trigger.to_state is not none
+                 and trigger.to_state.state == 'on' }}
+        sequence:
+          - service: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: "{{ frost_temp }}"
+
+      ###################################################################
+      # 2) Ein Fenster wurde geschlossen → wenn jetzt alle zu sind,
+      #    Temperatur nach Anwesenheit setzen
+      ###################################################################
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ trigger.entity_id in window_sensors
+                 and trigger.to_state is not none
+                 and trigger.to_state.state == 'off'
+                 and not fenster_offen }}
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ anwesend }}"
+                sequence:
+                  - service: climate.set_temperature
+                    target:
+                      entity_id: !input climate_entity
+                    data:
+                      temperature: "{{ comfort_temp }}"
+
+              - conditions:
+                  - condition: template
+                    value_template: "{{ not anwesend }}"
+                sequence:
+                  - service: climate.set_temperature
+                    target:
+                      entity_id: !input climate_entity
+                    data:
+                      temperature: "{{ away_temp }}"
+
+      ###################################################################
+      # 3) Anwesenheit ändert sich → Temperatur setzen, aber nur wenn
+      #    alle Fenster zu sind
+      ###################################################################
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ trigger.entity_id == presence_entity
+                 and not fenster_offen }}
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: state
+                    entity_id: !input presence_entity
+                    state: "on"
+                sequence:
+                  - service: climate.set_temperature
+                    target:
+                      entity_id: !input climate_entity
+                    data:
+                      temperature: "{{ comfort_temp }}"
+
+              - conditions:
+                  - condition: state
+                    entity_id: !input presence_entity
+                    state: "off"
+                sequence:
+                  - service: climate.set_temperature
+                    target:
+                      entity_id: !input climate_entity
+                    data:
+                      temperature: "{{ away_temp }}"
