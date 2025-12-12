@@ -77,62 +77,52 @@ blueprint:
     color1:
       name: Farbe 1 (R,G,B)
       default: "255,0,0"
-      selector:
-        text:
+      selector: { text: {} }
 
     color2:
       name: Farbe 2 (R,G,B)
       default: "255,128,0"
-      selector:
-        text:
+      selector: { text: {} }
 
     color3:
       name: Farbe 3 (R,G,B)
       default: "255,255,0"
-      selector:
-        text:
+      selector: { text: {} }
 
     color4:
       name: Farbe 4 (R,G,B)
       default: "0,255,0"
-      selector:
-        text:
+      selector: { text: {} }
 
     color5:
       name: Farbe 5 (R,G,B)
       default: "0,0,255"
-      selector:
-        text:
+      selector: { text: {} }
 
     color6:
       name: Farbe 6 (R,G,B)
       default: "0,255,255"
-      selector:
-        text:
+      selector: { text: {} }
 
     color7:
       name: Farbe 7 (R,G,B)
       default: "128,0,255"
-      selector:
-        text:
+      selector: { text: {} }
 
     color8:
       name: Farbe 8 (R,G,B)
       default: "255,0,128"
-      selector:
-        text:
+      selector: { text: {} }
 
     color9:
       name: Farbe 9 (R,G,B)
       default: "255,255,255"
-      selector:
-        text:
+      selector: { text: {} }
 
     color10:
       name: Farbe 10 (R,G,B)
       default: "255,255,200"
-      selector:
-        text:
+      selector: { text: {} }
 
 mode: restart
 max_exceeded: silent
@@ -141,158 +131,12 @@ trigger:
   - platform: mqtt
     topic: !input z2m_action_topic
     payload: "on"
-    id: on
+    id: "btn_on"
 
   - platform: mqtt
     topic: !input z2m_action_topic
     payload: "off"
-    id: off
+    id: "btn_off"
 
   - platform: mqtt
-    topic: !input z2m_action_topic
-    payload: "arrow_left_click"
-    id: left
-
-  - platform: mqtt
-    topic: !input z2m_action_topic
-    payload: "arrow_right_click"
-    id: right
-
-  - platform: mqtt
-    topic: !input z2m_action_topic
-    payload: "brightness_move_up"
-    id: dim_up
-
-  - platform: mqtt
-    topic: !input z2m_action_topic
-    payload: "brightness_move_down"
-    id: dim_down
-
-  - platform: mqtt
-    topic: !input z2m_action_topic
-    payload: "brightness_stop"
-    id: dim_stop
-
-variables:
-  light_entity: !input target_light
-  idx_entity: !input color_index_helper
-  dim_active: !input dim_active_helper
-  brightness: !input start_brightness
-  step: !input dim_step_pct
-  tick: !input dim_tick_ms
-  count: !input color_count
-
-  colors_all:
-    - !input color1
-    - !input color2
-    - !input color3
-    - !input color4
-    - !input color5
-    - !input color6
-    - !input color7
-    - !input color8
-    - !input color9
-    - !input color10
-
-action:
-  - variables:
-      colors: "{{ colors_all[:count] }}"
-      n: "{{ count }}"
-      current: "{{ states(idx_entity) | int(0) }}"
-      idx: "{{ current if 0 <= current < n else 0 }}"
-      rgb: "{{ colors[idx].split(',') | map('int') | list }}"
-
-  - choose:
-
-      - conditions: "{{ trigger.id == 'off' }}"
-        sequence:
-          - service: light.turn_off
-            target:
-              entity_id: "{{ light_entity }}"
-
-      - conditions: "{{ trigger.id == 'on' }}"
-        sequence:
-          - service: light.turn_on
-            target:
-              entity_id: "{{ light_entity }}"
-            data:
-              rgb_color: "{{ rgb }}"
-              brightness_pct: "{{ brightness }}"
-
-      - conditions: "{{ trigger.id == 'left' }}"
-        sequence:
-          - variables:
-              new: "{{ (idx + 1) % n }}"
-              rgb_new: "{{ colors[new].split(',') | map('int') | list }}"
-          - service: input_number.set_value
-            target:
-              entity_id: "{{ idx_entity }}"
-            data:
-              value: "{{ new }}"
-          - service: light.turn_on
-            target:
-              entity_id: "{{ light_entity }}"
-            data:
-              rgb_color: "{{ rgb_new }}"
-              brightness_pct: "{{ brightness }}"
-
-      - conditions: "{{ trigger.id == 'right' }}"
-        sequence:
-          - variables:
-              new: "{{ (idx - 1) % n }}"
-              rgb_new: "{{ colors[new].split(',') | map('int') | list }}"
-          - service: input_number.set_value
-            target:
-              entity_id: "{{ idx_entity }}"
-            data:
-              value: "{{ new }}"
-          - service: light.turn_on
-            target:
-              entity_id: "{{ light_entity }}"
-            data:
-              rgb_color: "{{ rgb_new }}"
-              brightness_pct: "{{ brightness }}"
-
-      - conditions: "{{ trigger.id == 'dim_up' }}"
-        sequence:
-          - service: input_boolean.turn_on
-            target:
-              entity_id: "{{ dim_active }}"
-          - repeat:
-              while:
-                - condition: state
-                  entity_id: "{{ dim_active }}"
-                  state: "on"
-              sequence:
-                - service: light.turn_on
-                  target:
-                    entity_id: "{{ light_entity }}"
-                  data:
-                    brightness_step_pct: "{{ step }}"
-                - delay:
-                    milliseconds: "{{ tick }}"
-
-      - conditions: "{{ trigger.id == 'dim_down' }}"
-        sequence:
-          - service: input_boolean.turn_on
-            target:
-              entity_id: "{{ dim_active }}"
-          - repeat:
-              while:
-                - condition: state
-                  entity_id: "{{ dim_active }}"
-                  state: "on"
-              sequence:
-                - service: light.turn_on
-                  target:
-                    entity_id: "{{ light_entity }}"
-                  data:
-                    brightness_step_pct: "{{ -step }}"
-                - delay:
-                    milliseconds: "{{ tick }}"
-
-      - conditions: "{{ trigger.id == 'dim_stop' }}"
-        sequence:
-          - service: input_boolean.turn_off
-            target:
-              entity_id: "{{ dim_active }}"
+    topic: !input z2m
