@@ -1,12 +1,11 @@
 blueprint:
-  name: STYRBAR (Zigbee2MQTT) – Farben, On/Off & Hold-Dimmen
+  name: STYRBAR (Z2M) – Farben, On/Off & Hold-Dimmen
   description: >
-    IKEA STYRBAR über Zigbee2MQTT:
-    - on: Lampe einschalten (Startfarbe + Starthelligkeit)
-    - off: Lampe ausschalten
-    - arrow_left_click / arrow_right_click: Farben cyclen
-    - brightness_move_up / brightness_move_down: Hold-Dimmen
-    - brightness_stop: Stop
+    IKEA STYRBAR via Zigbee2MQTT:
+    - on / off
+    - links / rechts: Farben cyclen
+    - hold hoch / runter: Dimmen
+    - stop: Dimmen beenden
   domain: automation
 
   input:
@@ -14,7 +13,7 @@ blueprint:
       name: Zigbee2MQTT Action Topic
       description: z.B. zigbee2mqtt/Schalter Marlene/action
       selector:
-        text: {}
+        text:
 
     target_light:
       name: Ziel-Lampe
@@ -23,21 +22,20 @@ blueprint:
           domain: light
 
     color_index_helper:
-      name: Farbindex (input_number)
-      description: Min 0, Max 9, Schritt 1
+      name: Farbindex Helper
       selector:
         entity:
           domain: input_number
 
     dim_active_helper:
-      name: Dimmen aktiv (input_boolean)
+      name: Dimmen aktiv Helper
       selector:
         entity:
           domain: input_boolean
 
     color_count:
       name: Anzahl Farben
-      default: 8
+      default: 5
       selector:
         number:
           min: 1
@@ -53,16 +51,6 @@ blueprint:
           min: 1
           max: 100
           step: 1
-          mode: slider
-
-    transition_seconds:
-      name: Transition (Sekunden)
-      default: 0.3
-      selector:
-        number:
-          min: 0
-          max: 5
-          step: 0.1
           mode: slider
 
     dim_step_pct:
@@ -85,65 +73,66 @@ blueprint:
           step: 10
           mode: slider
 
+    # Farben als RGB-Text
     color1:
-      name: Farbe 1 (RGB)
-      default: [255, 0, 0]
+      name: Farbe 1 (R,G,B)
+      default: "255,0,0"
       selector:
-        color_rgb: {}
+        text:
 
     color2:
-      name: Farbe 2 (RGB)
-      default: [255, 128, 0]
+      name: Farbe 2 (R,G,B)
+      default: "255,128,0"
       selector:
-        color_rgb: {}
+        text:
 
     color3:
-      name: Farbe 3 (RGB)
-      default: [255, 255, 0]
+      name: Farbe 3 (R,G,B)
+      default: "255,255,0"
       selector:
-        color_rgb: {}
+        text:
 
     color4:
-      name: Farbe 4 (RGB)
-      default: [0, 255, 0]
+      name: Farbe 4 (R,G,B)
+      default: "0,255,0"
       selector:
-        color_rgb: {}
+        text:
 
     color5:
-      name: Farbe 5 (RGB)
-      default: [0, 255, 255]
+      name: Farbe 5 (R,G,B)
+      default: "0,0,255"
       selector:
-        color_rgb: {}
+        text:
 
     color6:
-      name: Farbe 6 (RGB)
-      default: [0, 0, 255]
+      name: Farbe 6 (R,G,B)
+      default: "0,255,255"
       selector:
-        color_rgb: {}
+        text:
 
     color7:
-      name: Farbe 7 (RGB)
-      default: [128, 0, 255]
+      name: Farbe 7 (R,G,B)
+      default: "128,0,255"
       selector:
-        color_rgb: {}
+        text:
 
     color8:
-      name: Farbe 8 (RGB)
-      default: [255, 0, 128]
+      name: Farbe 8 (R,G,B)
+      default: "255,0,128"
       selector:
-        color_rgb: {}
+        text:
 
     color9:
-      name: Farbe 9 (RGB)
-      default: [255, 255, 255]
+      name: Farbe 9 (R,G,B)
+      default: "255,255,255"
       selector:
-        color_rgb: {}
+        text:
 
     color10:
-      name: Farbe 10 (RGB)
-      default: [255, 255, 200]
+      name: Farbe 10 (R,G,B)
+      default: "255,255,200"
       selector:
-        color_rgb: {}
+        text:
 
 mode: restart
 max_exceeded: silent
@@ -188,11 +177,10 @@ variables:
   light_entity: !input target_light
   idx_entity: !input color_index_helper
   dim_active: !input dim_active_helper
-  count: !input color_count
   brightness: !input start_brightness
-  transition: !input transition_seconds
   step: !input dim_step_pct
   tick: !input dim_tick_ms
+  count: !input color_count
 
   colors_all:
     - !input color1
@@ -208,10 +196,11 @@ variables:
 
 action:
   - variables:
-      colors: "{{ colors_all[:(count | int(1))] }}"
-      n: "{{ (count | int(1)) }}"
+      colors: "{{ colors_all[:count] }}"
+      n: "{{ count }}"
       current: "{{ states(idx_entity) | int(0) }}"
-      current_idx: "{{ current if 0 <= current < n else 0 }}"
+      idx: "{{ current if 0 <= current < n else 0 }}"
+      rgb: "{{ colors[idx].split(',') | map('int') | list }}"
 
   - choose:
 
@@ -220,8 +209,6 @@ action:
           - service: light.turn_off
             target:
               entity_id: "{{ light_entity }}"
-            data:
-              transition: "{{ transition }}"
 
       - conditions: "{{ trigger.id == 'on' }}"
         sequence:
@@ -229,17 +216,83 @@ action:
             target:
               entity_id: "{{ light_entity }}"
             data:
-              rgb_color: "{{ colors[current_idx] }}"
+              rgb_color: "{{ rgb }}"
               brightness_pct: "{{ brightness }}"
-              transition: "{{ transition }}"
 
       - conditions: "{{ trigger.id == 'left' }}"
         sequence:
           - variables:
-              new: "{{ (current_idx + 1) % n }}"
+              new: "{{ (idx + 1) % n }}"
+              rgb_new: "{{ colors[new].split(',') | map('int') | list }}"
           - service: input_number.set_value
             target:
               entity_id: "{{ idx_entity }}"
             data:
               value: "{{ new }}"
           - service: light.turn_on
+            target:
+              entity_id: "{{ light_entity }}"
+            data:
+              rgb_color: "{{ rgb_new }}"
+              brightness_pct: "{{ brightness }}"
+
+      - conditions: "{{ trigger.id == 'right' }}"
+        sequence:
+          - variables:
+              new: "{{ (idx - 1) % n }}"
+              rgb_new: "{{ colors[new].split(',') | map('int') | list }}"
+          - service: input_number.set_value
+            target:
+              entity_id: "{{ idx_entity }}"
+            data:
+              value: "{{ new }}"
+          - service: light.turn_on
+            target:
+              entity_id: "{{ light_entity }}"
+            data:
+              rgb_color: "{{ rgb_new }}"
+              brightness_pct: "{{ brightness }}"
+
+      - conditions: "{{ trigger.id == 'dim_up' }}"
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: "{{ dim_active }}"
+          - repeat:
+              while:
+                - condition: state
+                  entity_id: "{{ dim_active }}"
+                  state: "on"
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id: "{{ light_entity }}"
+                  data:
+                    brightness_step_pct: "{{ step }}"
+                - delay:
+                    milliseconds: "{{ tick }}"
+
+      - conditions: "{{ trigger.id == 'dim_down' }}"
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: "{{ dim_active }}"
+          - repeat:
+              while:
+                - condition: state
+                  entity_id: "{{ dim_active }}"
+                  state: "on"
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id: "{{ light_entity }}"
+                  data:
+                    brightness_step_pct: "{{ -step }}"
+                - delay:
+                    milliseconds: "{{ tick }}"
+
+      - conditions: "{{ trigger.id == 'dim_stop' }}"
+        sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: "{{ dim_active }}"
