@@ -1,19 +1,19 @@
 blueprint:
-  name: STYRBAR (Z2M) – Farben, On/Off & Hold-Dimmen
+  name: STYRBAR (Z2M) – Farben + On/Off + Hold-Dimmen
   description: >
-    IKEA STYRBAR via Zigbee2MQTT:
-    - on / off
-    - links / rechts: Farben cyclen
-    - hold hoch / runter: Dimmen
-    - stop: Dimmen beenden
+    IKEA STYRBAR über Zigbee2MQTT action-topic:
+    - on/off
+    - arrow_left/right_click: Farben cyclen
+    - brightness_move_up/down: Hold dimmen
+    - brightness_stop: stop
   domain: automation
 
   input:
-    z2m_action_topic:
+    z2m:
       name: Zigbee2MQTT Action Topic
       description: z.B. zigbee2mqtt/Schalter Marlene/action
       selector:
-        text:
+        text: {}
 
     target_light:
       name: Ziel-Lampe
@@ -22,20 +22,21 @@ blueprint:
           domain: light
 
     color_index_helper:
-      name: Farbindex Helper
+      name: Farbindex (input_number)
+      description: Min 0, Max 9, Schritt 1
       selector:
         entity:
           domain: input_number
 
     dim_active_helper:
-      name: Dimmen aktiv Helper
+      name: Dimmen aktiv (input_boolean)
       selector:
         entity:
           domain: input_boolean
 
     color_count:
       name: Anzahl Farben
-      default: 5
+      default: 8
       selector:
         number:
           min: 1
@@ -73,70 +74,192 @@ blueprint:
           step: 10
           mode: slider
 
-    # Farben als RGB-Text
-    color1:
-      name: Farbe 1 (R,G,B)
-      default: "255,0,0"
-      selector: { text: {} }
-
-    color2:
-      name: Farbe 2 (R,G,B)
-      default: "255,128,0"
-      selector: { text: {} }
-
-    color3:
-      name: Farbe 3 (R,G,B)
-      default: "255,255,0"
-      selector: { text: {} }
-
-    color4:
-      name: Farbe 4 (R,G,B)
-      default: "0,255,0"
-      selector: { text: {} }
-
-    color5:
-      name: Farbe 5 (R,G,B)
-      default: "0,0,255"
-      selector: { text: {} }
-
-    color6:
-      name: Farbe 6 (R,G,B)
-      default: "0,255,255"
-      selector: { text: {} }
-
-    color7:
-      name: Farbe 7 (R,G,B)
-      default: "128,0,255"
-      selector: { text: {} }
-
-    color8:
-      name: Farbe 8 (R,G,B)
-      default: "255,0,128"
-      selector: { text: {} }
-
-    color9:
-      name: Farbe 9 (R,G,B)
-      default: "255,255,255"
-      selector: { text: {} }
-
-    color10:
-      name: Farbe 10 (R,G,B)
-      default: "255,255,200"
-      selector: { text: {} }
+    # Farben als RGB-Text "R,G,B"
+    color1:  { name: Farbe 1 (R,G,B),  default: "255,0,0",     selector: { text: {} } }
+    color2:  { name: Farbe 2 (R,G,B),  default: "255,128,0",   selector: { text: {} } }
+    color3:  { name: Farbe 3 (R,G,B),  default: "255,255,0",   selector: { text: {} } }
+    color4:  { name: Farbe 4 (R,G,B),  default: "0,255,0",     selector: { text: {} } }
+    color5:  { name: Farbe 5 (R,G,B),  default: "0,255,255",   selector: { text: {} } }
+    color6:  { name: Farbe 6 (R,G,B),  default: "0,0,255",     selector: { text: {} } }
+    color7:  { name: Farbe 7 (R,G,B),  default: "128,0,255",   selector: { text: {} } }
+    color8:  { name: Farbe 8 (R,G,B),  default: "255,0,128",   selector: { text: {} } }
+    color9:  { name: Farbe 9 (R,G,B),  default: "255,255,255", selector: { text: {} } }
+    color10: { name: Farbe 10 (R,G,B), default: "255,255,200", selector: { text: {} } }
 
 mode: restart
 max_exceeded: silent
 
 trigger:
   - platform: mqtt
-    topic: !input z2m_action_topic
+    topic: !input z2m
     payload: "on"
     id: "btn_on"
 
   - platform: mqtt
-    topic: !input z2m_action_topic
+    topic: !input z2m
     payload: "off"
     id: "btn_off"
 
   - platform: mqtt
     topic: !input z2m
+    payload: "arrow_left_click"
+    id: "left"
+
+  - platform: mqtt
+    topic: !input z2m
+    payload: "arrow_right_click"
+    id: "right"
+
+  - platform: mqtt
+    topic: !input z2m
+    payload: "brightness_move_up"
+    id: "dim_up"
+
+  - platform: mqtt
+    topic: !input z2m
+    payload: "brightness_move_down"
+    id: "dim_down"
+
+  - platform: mqtt
+    topic: !input z2m
+    payload: "brightness_stop"
+    id: "dim_stop"
+
+variables:
+  light_entity: !input target_light
+  idx_entity: !input color_index_helper
+  dim_active: !input dim_active_helper
+  count: !input color_count
+  brightness: !input start_brightness
+  step: !input dim_step_pct
+  tick: !input dim_tick_ms
+
+  colors_all:
+    - !input color1
+    - !input color2
+    - !input color3
+    - !input color4
+    - !input color5
+    - !input color6
+    - !input color7
+    - !input color8
+    - !input color9
+    - !input color10
+
+action:
+  - variables:
+      n: "{{ (count | int(1)) }}"
+      colors: "{{ colors_all[:(count | int(1))] }}"
+      current: "{{ states(idx_entity) | int(0) }}"
+      idx: "{{ current if 0 <= current < n else 0 }}"
+
+  # Safety: bei allen Nicht-Dimm-Aktionen Dimmen beenden
+  - choose:
+      - conditions: "{{ trigger.id in ['btn_on','btn_off','left','right'] }}"
+        sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: "{{ dim_active }}"
+
+  - choose:
+      # OFF
+      - conditions: "{{ trigger.id == 'btn_off' }}"
+        sequence:
+          - service: light.turn_off
+            target:
+              entity_id: "{{ light_entity }}"
+
+      # ON
+      - conditions: "{{ trigger.id == 'btn_on' }}"
+        sequence:
+          - variables:
+              rgb: "{{ colors[idx].split(',') | map('int') | list }}"
+          - service: light.turn_on
+            target:
+              entity_id: "{{ light_entity }}"
+            data:
+              rgb_color: "{{ rgb }}"
+              brightness_pct: "{{ brightness }}"
+
+      # LINKS -> nächste Farbe
+      - conditions: "{{ trigger.id == 'left' }}"
+        sequence:
+          - variables:
+              new: "{{ (idx + 1) % n }}"
+              rgb_new: "{{ colors[new].split(',') | map('int') | list }}"
+          - service: input_number.set_value
+            target:
+              entity_id: "{{ idx_entity }}"
+            data:
+              value: "{{ new }}"
+          - service: light.turn_on
+            target:
+              entity_id: "{{ light_entity }}"
+            data:
+              rgb_color: "{{ rgb_new }}"
+              brightness_pct: "{{ brightness }}"
+
+      # RECHTS -> vorherige Farbe
+      - conditions: "{{ trigger.id == 'right' }}"
+        sequence:
+          - variables:
+              new: "{{ (idx - 1) % n }}"
+              rgb_new: "{{ colors[new].split(',') | map('int') | list }}"
+          - service: input_number.set_value
+            target:
+              entity_id: "{{ idx_entity }}"
+            data:
+              value: "{{ new }}"
+          - service: light.turn_on
+            target:
+              entity_id: "{{ light_entity }}"
+            data:
+              rgb_color: "{{ rgb_new }}"
+              brightness_pct: "{{ brightness }}"
+
+      # HOLD UP
+      - conditions: "{{ trigger.id == 'dim_up' }}"
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: "{{ dim_active }}"
+          - repeat:
+              while:
+                - condition: state
+                  entity_id: "{{ dim_active }}"
+                  state: "on"
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id: "{{ light_entity }}"
+                  data:
+                    brightness_step_pct: "{{ step }}"
+                - delay:
+                    milliseconds: "{{ tick }}"
+
+      # HOLD DOWN
+      - conditions: "{{ trigger.id == 'dim_down' }}"
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: "{{ dim_active }}"
+          - repeat:
+              while:
+                - condition: state
+                  entity_id: "{{ dim_active }}"
+                  state: "on"
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id: "{{ light_entity }}"
+                  data:
+                    brightness_step_pct: "{{ -step }}"
+                - delay:
+                    milliseconds: "{{ tick }}"
+
+      # STOP
+      - conditions: "{{ trigger.id == 'dim_stop' }}"
+        sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: "{{ dim_active }}"
